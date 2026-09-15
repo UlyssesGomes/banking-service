@@ -1,0 +1,16 @@
+{
+  "type": "record",
+  "name": "Agency",
+  "namespace": "br.com.mybanking",
+  "fields": [
+    { "name":  "name", "type": "string" },
+    { "name":  "companyName", "type": "string" },
+    { "name":  "cnpj", "type": "string" },
+    { "name":  "registerSituation", "type": ["null","string"],
+      "default": null
+    },
+    { "name":  "responsible", "type": ["null","string"],
+      "default": null
+    }
+  ]
+}

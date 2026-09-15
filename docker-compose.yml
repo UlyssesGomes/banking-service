@@ -1,0 +1,38 @@
+services:
+  banking-service:
+    image: joao0212/banking-service:v1
+    container_name: banking-service-container
+    environment:
+      - QUARKUS_CLIENT_HTTP=host.docker.internal
+      - QUARKUS_CLIENT_HTTP_PORT=8181
+      - QUARKUS_DATASOURCE_USERNAME=admin
+      - QUARKUS_DATASOURCE_PASSWORD=admin
+      - QUARKUS_DATASOURCE_HOST=postgres-db-banking-service
+      - QUARKUS_DATASOURCE_PORT=5432
+    ports:
+      - 8080:8080
+    depends_on:
+      - postgres-db-banking-service
+
+  postgres-db-banking-service:
+    image: postgres:14
+    container_name: postgres-db-banking-service-container
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=agency
+    ports:
+      - 5433:5432
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+volumes:
+  postgres_data:
+    driver: local
+

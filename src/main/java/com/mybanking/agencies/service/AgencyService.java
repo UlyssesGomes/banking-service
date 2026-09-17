@@ -10,6 +10,9 @@ import com.mybanking.agencies.repository.AgencyRepository;
 import com.mybanking.agencies.service.cache.RedisCacheService;
 import com.mybanking.agencies.service.http.RegisterSituationHttpService;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
 import io.quarkus.hibernate.reactive.panache.common.WithSession;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.quarkus.logging.Log;
@@ -24,11 +27,13 @@ public class AgencyService {
     private final MeterRegistry meterRegistry;
     private final RedisCacheService redisCacheService;
     private final ObjectMapper objectMapper;
+    private final Tracer tracer;
 
-    AgencyService(AgencyRepository agencyRepository, MeterRegistry meterRegistry, RedisCacheService redisCacheService) {
+    AgencyService(AgencyRepository agencyRepository, MeterRegistry meterRegistry, RedisCacheService redisCacheService, Tracer tracer) {
         this.agencyRepository = agencyRepository;
         this.meterRegistry = meterRegistry;
         this.redisCacheService = redisCacheService;
+        this.tracer = tracer;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -37,12 +42,22 @@ public class AgencyService {
 
     @WithTransaction
     public Uni<Void> register(Agency agency) {
+        Span span = tracer.spanBuilder("agencyRegister").startSpan();
+        span.setAttribute("agency.cnpj", agency.getCnpj());
         return registerSituationHttpService.searchByCnpj(agency.getCnpj())
                 .onItem()
                 .ifNull().failWith(() -> {
                     this.meterRegistry.counter(MetersEnums.AGENCY_NOT_ADDED_COUNT.getValue()).increment();
                     Log.error("Agency with CNPJ " + agency.getCnpj() + " is inactive.");
                     return new AgencyNotActiveOrNotFoundException();
+                })
+                .invoke(agencyHttp -> {
+                    try(Scope scope = span.makeCurrent()) {
+                        span.addEvent("Agency Founded");
+                        span.setAttribute("agency.founded", agencyHttp.getCnpj());
+                    } finally {
+                        span.end();
+                    }
                 })
                 .invoke(a -> Log.info("Agency with CNPJ " + a.getCnpj() + " was founded."))
                 .onItem().transformToUni(agencyHTTPTransformed -> persistIfActive(agencyHTTPTransformed, agency));
@@ -71,6 +86,7 @@ public class AgencyService {
         return redisCacheService.get(key).onItem().ifNotNull().transform(agency -> {
             try {
                 Log.info("Agency cache hit.");
+                Span.current().setAttribute("cache.hit", "TRUE");
                 meterRegistry.counter(MetersEnums.CACHE_HIT.getValue()).increment();
                 return objectMapper.readValue(agency, Agency.class);
             } catch(Exception e) {
@@ -83,6 +99,7 @@ public class AgencyService {
         return agencyRepository.findById(id).onItem().ifNotNull().call(agency -> {
             try {
                 Log.info("Agency search in database.");
+                Span.current().setAttribute("cache.hit", "FALSE");
                 meterRegistry.counter(MetersEnums.CACHE_MISSED.getValue()).increment();
                 return redisCacheService.set(key, objectMapper.writeValueAsString(agency), 3600);
             } catch (Exception e) {

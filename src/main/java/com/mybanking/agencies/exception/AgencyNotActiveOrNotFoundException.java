@@ -6,6 +6,6 @@ public class AgencyNotActiveOrNotFoundException extends RuntimeException {
 
     @Override
     public String getMessage() {
-        return "O status da agência é " + RegisterSituationEnum.INACTIVE + " ou não foi encontrada";
+        return "The agency status is " + RegisterSituationEnum.INACTIVE + " or not found.";
     }
 }
